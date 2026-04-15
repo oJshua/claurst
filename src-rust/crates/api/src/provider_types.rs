@@ -347,3 +347,62 @@ pub enum ApiKeyHeader {
     /// A custom header name.
     Custom(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn request_activity_default_is_coding() {
+        assert_eq!(RequestActivity::default(), RequestActivity::Coding);
+    }
+
+    #[test]
+    fn request_activity_header_values() {
+        assert_eq!(RequestActivity::Coding.as_header_value(), "coding");
+        assert_eq!(RequestActivity::Planning.as_header_value(), "planning");
+        assert_eq!(RequestActivity::Subagent.as_header_value(), "subagent");
+        assert_eq!(RequestActivity::Summarize.as_header_value(), "summarize");
+        assert_eq!(RequestActivity::Title.as_header_value(), "title");
+    }
+
+    #[test]
+    fn request_activity_serde_round_trip() {
+        for activity in [
+            RequestActivity::Coding,
+            RequestActivity::Planning,
+            RequestActivity::Subagent,
+            RequestActivity::Summarize,
+            RequestActivity::Title,
+        ] {
+            let json = serde_json::to_string(&activity).unwrap();
+            let back: RequestActivity = serde_json::from_str(&json).unwrap();
+            assert_eq!(activity, back);
+        }
+    }
+
+    #[test]
+    fn provider_request_default_activity() {
+        let json = r#"{
+            "model": "test",
+            "messages": [],
+            "max_tokens": 100,
+            "provider_options": {}
+        }"#;
+        let req: ProviderRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.activity, RequestActivity::Coding);
+    }
+
+    #[test]
+    fn provider_request_explicit_activity() {
+        let json = r#"{
+            "model": "test",
+            "messages": [],
+            "max_tokens": 100,
+            "provider_options": {},
+            "activity": "summarize"
+        }"#;
+        let req: ProviderRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.activity, RequestActivity::Summarize);
+    }
+}

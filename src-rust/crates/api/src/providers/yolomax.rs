@@ -277,3 +277,109 @@ impl LlmProvider for YolomaxProvider {
         self.inner.read().capabilities()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider_types::RequestActivity;
+
+    #[test]
+    fn activity_headers_coding() {
+        let h = YolomaxProvider::activity_headers(RequestActivity::Coding);
+        assert_eq!(h.get("x-claurst-activity").unwrap(), "coding");
+    }
+
+    #[test]
+    fn activity_headers_planning() {
+        let h = YolomaxProvider::activity_headers(RequestActivity::Planning);
+        assert_eq!(h.get("x-claurst-activity").unwrap(), "planning");
+    }
+
+    #[test]
+    fn activity_headers_subagent() {
+        let h = YolomaxProvider::activity_headers(RequestActivity::Subagent);
+        assert_eq!(h.get("x-claurst-activity").unwrap(), "subagent");
+    }
+
+    #[test]
+    fn activity_headers_summarize() {
+        let h = YolomaxProvider::activity_headers(RequestActivity::Summarize);
+        assert_eq!(h.get("x-claurst-activity").unwrap(), "summarize");
+    }
+
+    #[test]
+    fn activity_headers_title() {
+        let h = YolomaxProvider::activity_headers(RequestActivity::Title);
+        assert_eq!(h.get("x-claurst-activity").unwrap(), "title");
+    }
+
+    #[test]
+    fn provider_id_is_yolomax() {
+        let p = YolomaxProvider::new(
+            "https://proxy.example.com".to_string(),
+            "tok".to_string(),
+            "sess-123".to_string(),
+            "0.1.0".to_string(),
+        );
+        assert_eq!(p.id().as_ref(), "yolomax");
+        assert_eq!(p.name(), "Yolomax");
+    }
+
+    #[test]
+    fn extra_headers_set_on_construction() {
+        let p = YolomaxProvider::new(
+            "https://proxy.example.com".to_string(),
+            "tok".to_string(),
+            "sess-abc".to_string(),
+            "1.2.3".to_string(),
+        );
+        assert_eq!(
+            p.extra_headers.get("x-claurst-client-version").unwrap(),
+            "1.2.3"
+        );
+        assert_eq!(
+            p.extra_headers.get("x-claurst-session-id").unwrap(),
+            "sess-abc"
+        );
+    }
+
+    #[test]
+    fn is_auth_error_detects_auth_failed() {
+        let e = ProviderError::AuthFailed {
+            provider: ProviderId::new("yolomax"),
+            message: "bad token".to_string(),
+        };
+        assert!(YolomaxProvider::is_auth_error(&e));
+    }
+
+    #[test]
+    fn is_auth_error_detects_401() {
+        let e = ProviderError::Other {
+            provider: ProviderId::new("yolomax"),
+            message: "unauthorized".to_string(),
+            status: Some(401),
+            body: None,
+        };
+        assert!(YolomaxProvider::is_auth_error(&e));
+    }
+
+    #[test]
+    fn is_auth_error_detects_invalid_token() {
+        let e = ProviderError::Other {
+            provider: ProviderId::new("yolomax"),
+            message: "invalid_token: expired".to_string(),
+            status: Some(403),
+            body: None,
+        };
+        assert!(YolomaxProvider::is_auth_error(&e));
+    }
+
+    #[test]
+    fn is_auth_error_rejects_rate_limit() {
+        let e = ProviderError::RateLimited {
+            provider: ProviderId::new("yolomax"),
+            retry_after: Some(5),
+        };
+        assert!(!YolomaxProvider::is_auth_error(&e));
+    }
+}
