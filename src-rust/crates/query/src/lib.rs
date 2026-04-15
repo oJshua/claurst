@@ -124,6 +124,8 @@ pub struct QueryConfig {
     pub model_registry: Option<std::sync::Arc<claurst_api::ModelRegistry>>,
     /// Managed agent (manager-executor) configuration.
     pub managed_agents: Option<claurst_core::ManagedAgentConfig>,
+    /// Default activity tag for provider requests made by this loop.
+    pub default_activity: Option<claurst_api::RequestActivity>,
 }
 
 impl Default for QueryConfig {
@@ -150,6 +152,7 @@ impl Default for QueryConfig {
             agent_definition: None,
             model_registry: None,
             managed_agents: None,
+            default_activity: None,
         }
     }
 }
@@ -1080,7 +1083,13 @@ pub async fn run_query_loop(
                             config.effort_level,
                             effective_thinking_budget,
                         ),
-                        activity: Default::default(),
+                        activity: config.default_activity.unwrap_or_else(|| {
+                            if config.agent_name.as_deref() == Some("plan") {
+                                claurst_api::RequestActivity::Planning
+                            } else {
+                                claurst_api::RequestActivity::Coding
+                            }
+                        }),
                     };
 
                     // Use create_message_stream so the TUI receives real-time
@@ -2141,6 +2150,7 @@ mod tests {
             agent_definition: None,
             model_registry: None,
             managed_agents: None,
+            default_activity: None,
         }
     }
 

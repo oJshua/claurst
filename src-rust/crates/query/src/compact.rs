@@ -611,9 +611,16 @@ async fn summarise_head(
         ))
         .build();
 
-    // Use a null handler since we just want the final accumulated message.
     let handler: Arc<dyn StreamHandler> = Arc::new(claurst_api::streaming::NullStreamHandler);
-    let mut rx = client.create_message_stream(request, handler).await?;
+    let summarize_headers = {
+        let mut h = std::collections::HashMap::new();
+        h.insert(
+            "x-claurst-activity".to_string(),
+            claurst_api::RequestActivity::Summarize.as_header_value().to_string(),
+        );
+        h
+    };
+    let mut rx = client.create_message_stream_with_headers(request, handler, &summarize_headers).await?;
     let mut acc = StreamAccumulator::new();
 
     while let Some(evt) = rx.recv().await {
@@ -1022,7 +1029,15 @@ pub async fn context_collapse(
         .build();
 
     let handler: Arc<dyn StreamHandler> = Arc::new(claurst_api::streaming::NullStreamHandler);
-    let mut rx = client.create_message_stream(request, handler).await?;
+    let collapse_headers = {
+        let mut h = std::collections::HashMap::new();
+        h.insert(
+            "x-claurst-activity".to_string(),
+            claurst_api::RequestActivity::Summarize.as_header_value().to_string(),
+        );
+        h
+    };
+    let mut rx = client.create_message_stream_with_headers(request, handler, &collapse_headers).await?;
     let mut acc = StreamAccumulator::new();
 
     while let Some(evt) = rx.recv().await {

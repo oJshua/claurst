@@ -4295,7 +4295,7 @@ impl SlashCommand for RenameCommand {
             stop_sequences: vec![],
             thinking: None,
             provider_options: serde_json::Value::Object(Default::default()),
-            activity: Default::default(),
+            activity: claurst_api::RequestActivity::Title,
         };
 
         match provider.create_message(request).await {
