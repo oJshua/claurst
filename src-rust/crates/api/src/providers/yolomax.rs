@@ -5,6 +5,7 @@ use async_stream::stream;
 use claurst_core::types::{ContentBlock, UsageInfo};
 use claurst_core::ProviderId;
 use futures::{Stream, StreamExt};
+use parking_lot::RwLock;
 
 use crate::client::ClientConfig;
 use crate::provider::{
@@ -19,9 +20,14 @@ use crate::streaming::NullStreamHandler;
 /// Thin wrapper around `AnthropicProvider` that uses bearer auth, a custom
 /// `api_base`, and injects `x-claurst-*` headers on every request.
 /// `x-claurst-activity` is set per-request from `ProviderRequest.activity`.
+///
+/// On 401 responses, transparently attempts a token refresh using the stored
+/// refresh_token and retries the request once.
 pub struct YolomaxProvider {
-    inner: AnthropicProvider,
+    inner: RwLock<AnthropicProvider>,
     id: ProviderId,
+    api_base: String,
+    extra_headers: std::collections::HashMap<String, String>,
 }
 
 impl YolomaxProvider {
@@ -40,15 +46,17 @@ impl YolomaxProvider {
 
         let config = ClientConfig {
             api_key: bearer_token,
-            api_base,
+            api_base: api_base.clone(),
             use_bearer_auth: true,
-            extra_headers,
+            extra_headers: extra_headers.clone(),
             ..Default::default()
         };
 
         Self {
-            inner: AnthropicProvider::from_config(config),
+            inner: RwLock::new(AnthropicProvider::from_config(config)),
             id: ProviderId::new(ProviderId::YOLOMAX),
+            api_base,
+            extra_headers,
         }
     }
 
@@ -59,6 +67,36 @@ impl YolomaxProvider {
             activity.as_header_value().to_string(),
         );
         h
+    }
+
+    fn rebuild_inner(&self, new_token: &str) {
+        let config = ClientConfig {
+            api_key: new_token.to_string(),
+            api_base: self.api_base.clone(),
+            use_bearer_auth: true,
+            extra_headers: self.extra_headers.clone(),
+            ..Default::default()
+        };
+        *self.inner.write() = AnthropicProvider::from_config(config);
+    }
+
+    async fn try_refresh(&self) -> Result<(), String> {
+        let refresh_token = claurst_core::yolomax_auth::stored_refresh_token()
+            .ok_or_else(|| "No stored refresh token".to_string())?;
+        let token_resp =
+            claurst_core::yolomax_auth::refresh_access_token(&self.api_base, &refresh_token)
+                .await?;
+        self.rebuild_inner(&token_resp.access_token);
+        Ok(())
+    }
+
+    fn is_auth_error(e: &ProviderError) -> bool {
+        match e {
+            ProviderError::AuthFailed { .. } => true,
+            ProviderError::Other { status: Some(401), .. } => true,
+            ProviderError::Other { message, .. } if message.contains("invalid_token") => true,
+            _ => false,
+        }
     }
 }
 
@@ -75,7 +113,25 @@ impl LlmProvider for YolomaxProvider {
         &self,
         request: ProviderRequest,
     ) -> Result<ProviderResponse, ProviderError> {
-        let mut stream = self.create_message_stream(request).await?;
+        let mut stream = self.create_message_stream(request.clone()).await;
+
+        if let Err(ref e) = stream {
+            if Self::is_auth_error(e) {
+                if self.try_refresh().await.is_ok() {
+                    stream = self.create_message_stream(request).await;
+                } else {
+                    return Err(ProviderError::Other {
+                        provider: self.id.clone(),
+                        message: "Yolomax token expired. Run /connect yolomax to re-authenticate."
+                            .to_string(),
+                        status: Some(401),
+                        body: None,
+                    });
+                }
+            }
+        }
+
+        let mut stream = stream?;
 
         let mut id = String::from("unknown");
         let mut model = String::new();
@@ -178,17 +234,24 @@ impl LlmProvider for YolomaxProvider {
         let api_request = AnthropicProvider::build_request(&request);
         let headers = Self::activity_headers(activity);
         let handler = Arc::new(NullStreamHandler);
-        let client = self.inner.client().clone();
+        let client = self.inner.read().client().clone();
         let provider_id = self.id.clone();
 
         let mut rx = client
             .create_message_stream_with_headers(api_request, handler, &headers)
             .await
-            .map_err(|e| ProviderError::Other {
-                provider: provider_id.clone(),
-                message: e.to_string(),
-                status: None,
-                body: None,
+            .map_err(|e| {
+                let status = if e.to_string().contains("401") {
+                    Some(401)
+                } else {
+                    None
+                };
+                ProviderError::Other {
+                    provider: provider_id.clone(),
+                    message: e.to_string(),
+                    status,
+                    body: None,
+                }
             })?;
 
         let s = stream! {
@@ -203,14 +266,14 @@ impl LlmProvider for YolomaxProvider {
     }
 
     async fn list_models(&self) -> Result<Vec<ModelInfo>, ProviderError> {
-        self.inner.list_models().await
+        self.inner.read().list_models().await
     }
 
     async fn health_check(&self) -> Result<ProviderStatus, ProviderError> {
-        self.inner.health_check().await
+        self.inner.read().health_check().await
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
-        self.inner.capabilities()
+        self.inner.read().capabilities()
     }
 }
