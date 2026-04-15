@@ -7557,13 +7557,90 @@ impl SlashCommand for ConnectCommand {
     fn name(&self) -> &str { "connect" }
     fn description(&self) -> &str { "Connect an AI provider" }
     fn help(&self) -> &str {
-        "Usage: /connect\n\nOpens the interactive provider picker dialog.\nSelect a provider to see setup instructions."
+        "Usage: /connect [provider]\n\n\
+         Without arguments: opens the interactive provider picker dialog.\n\
+         /connect yolomax — authenticate with Yolomax proxy via device-code flow."
     }
 
-    async fn execute(&self, _args: &str, _ctx: &mut CommandContext) -> CommandResult {
-        // This is handled by the TUI interceptor — opening the connect dialog.
+    async fn execute(&self, args: &str, ctx: &mut CommandContext) -> CommandResult {
+        let provider = args.trim();
+        if provider == "yolomax" {
+            return connect_yolomax(ctx).await;
+        }
+        // Default: handled by the TUI interceptor — opening the connect dialog.
         CommandResult::Message("Use the connect dialog to set up a provider.".to_string())
     }
+}
+
+async fn connect_yolomax(ctx: &mut CommandContext) -> CommandResult {
+    let base_url = std::env::var("YOLOMAX_BASE_URL").unwrap_or_default();
+    if base_url.is_empty() {
+        return CommandResult::Error(
+            "YOLOMAX_BASE_URL is not set. Set the environment variable to your Yolomax proxy URL."
+                .to_string(),
+        );
+    }
+
+    let device = match claurst_core::yolomax_auth::request_device_code(&base_url).await {
+        Ok(d) => d,
+        Err(e) => return CommandResult::Error(format!("Device-code request failed: {}", e)),
+    };
+
+    let _ = open_with_system(&device.verification_uri);
+
+    let msg = format!(
+        "Yolomax Authentication\n\n\
+         Open this URL:  {}\n\
+         Enter code:     {}\n\n\
+         Waiting for authorization (up to {} seconds)…",
+        device.verification_uri, device.user_code, device.expires_in
+    );
+
+    // Show the code to the user immediately.
+    // The poll will block until authorized or timed out.
+    eprintln!("{}", msg);
+
+    let tokens = match claurst_core::yolomax_auth::poll_for_token(
+        &base_url,
+        &device.device_code,
+        device.interval,
+        device.expires_in,
+    )
+    .await
+    {
+        Ok(t) => t,
+        Err(e) => return CommandResult::Error(format!("Authorization failed: {}", e)),
+    };
+
+    claurst_core::yolomax_auth::persist_tokens(&tokens);
+
+    // Persist provider selection.
+    let _ = save_settings_mutation(|settings| {
+        settings.provider = Some("yolomax".to_string());
+    });
+
+    // Attempt a /v1/models fetch to verify the token works.
+    let model_check = match provider_for_config(&ctx.config).await {
+        Some(provider) => match provider.list_models().await {
+            Ok(models) => {
+                let names: Vec<_> = models.iter().map(|m| m.id.to_string()).collect();
+                if names.is_empty() {
+                    "  (no models returned)".to_string()
+                } else {
+                    format!("  Available models: {}", names.join(", "))
+                }
+            }
+            Err(e) => format!("  Warning: model fetch failed: {}", e),
+        },
+        None => "  Warning: could not create provider client.".to_string(),
+    };
+
+    CommandResult::Message(format!(
+        "Connected to Yolomax successfully!\n\
+         Provider set to: yolomax\n\
+         {}",
+        model_check
+    ))
 }
 
 // ---- /agent ---------------------------------------------------------------
