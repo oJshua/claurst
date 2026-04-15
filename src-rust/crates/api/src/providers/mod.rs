@@ -38,3 +38,6 @@ pub use copilot::CopilotProvider;
 
 pub mod codex;
 pub use codex::CodexProvider;
+
+pub mod yolomax;
+pub use yolomax::YolomaxProvider;

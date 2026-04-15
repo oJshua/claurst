@@ -13,7 +13,7 @@ use crate::provider::LlmProvider;
 use crate::provider_types::ProviderStatus;
 use crate::providers::{
     AnthropicProvider, AzureProvider, BedrockProvider, CodexProvider, CohereProvider,
-    CopilotProvider, GoogleProvider, MinimaxProvider, OpenAiProvider,
+    CopilotProvider, GoogleProvider, MinimaxProvider, OpenAiProvider, YolomaxProvider,
 };
 
 fn normalize_openai_compat_base(override_base: &str) -> String {
@@ -194,6 +194,16 @@ pub fn provider_from_config(
         }
         "codex" | "openai-codex" => {
             CodexProvider::from_stored().map(|provider| Arc::new(provider) as Arc<dyn LlmProvider>)
+        }
+        "yolomax" => {
+            let base = api_base.or_else(|| {
+                std::env::var("YOLOMAX_BASE_URL").ok().filter(|v| !v.is_empty())
+            })?;
+            let token = api_key?;
+            let session_id = std::env::var("CLAURST_SESSION_ID").unwrap_or_default();
+            let client_version = env!("CARGO_PKG_VERSION").to_string();
+            Some(Arc::new(YolomaxProvider::new(base, token, session_id, client_version))
+                as Arc<dyn LlmProvider>)
         }
         _ => api_key.and_then(|key| provider_from_key(provider_id, key)),
     }
