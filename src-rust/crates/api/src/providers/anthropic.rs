@@ -56,8 +56,13 @@ impl AnthropicProvider {
         }
     }
 
+    /// Access the underlying client (for sibling providers like Yolomax).
+    pub(crate) fn client(&self) -> &Arc<AnthropicClient> {
+        &self.client
+    }
+
     /// Build a [`CreateMessageRequest`] from a [`ProviderRequest`].
-    fn build_request(request: &ProviderRequest) -> CreateMessageRequest {
+    pub(crate) fn build_request(request: &ProviderRequest) -> CreateMessageRequest {
         let normalized_messages = normalize_anthropic_messages(&request.messages);
         let api_messages: Vec<ApiMessage> = normalized_messages
             .iter()
@@ -112,7 +117,7 @@ impl AnthropicProvider {
     }
 
     /// Map an [`AnthropicStreamEvent`] to the provider-agnostic [`StreamEvent`].
-    fn map_stream_event(evt: AnthropicStreamEvent) -> Option<StreamEvent> {
+    pub(crate) fn map_stream_event(evt: AnthropicStreamEvent) -> Option<StreamEvent> {
         match evt {
             AnthropicStreamEvent::MessageStart { id, model, usage } => {
                 Some(StreamEvent::MessageStart { id, model, usage })
