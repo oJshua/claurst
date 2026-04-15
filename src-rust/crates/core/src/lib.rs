@@ -27,6 +27,9 @@ pub use auth_store::{AuthStore, StoredCredential};
 // GitHub Device Code Flow (RFC 8628) for OAuth device authorization.
 pub mod device_code;
 
+// Yolomax OAuth device-code flow and token management.
+pub mod yolomax_auth;
+
 // Utility modules ported from src/utils/
 pub mod token_budget;
 pub mod truncate;

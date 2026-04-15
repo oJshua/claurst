@@ -98,6 +98,13 @@ impl AuthStore {
                         return Some(access.clone());
                     }
                 }
+                StoredCredential::OAuthToken { access, .. }
+                    if provider_id == "yolomax" =>
+                {
+                    if !access.is_empty() {
+                        return Some(access.clone());
+                    }
+                }
                 _ => {}
             }
         }
@@ -122,6 +129,7 @@ impl AuthStore {
             "huggingface" => "HF_TOKEN",
             "nvidia" => "NVIDIA_API_KEY",
             "zai" => "ZAI_API_KEY",
+            "yolomax" => "YOLOMAX_API_KEY",
             _ => return None,
         };
         std::env::var(env_var).ok().filter(|k| !k.is_empty())
