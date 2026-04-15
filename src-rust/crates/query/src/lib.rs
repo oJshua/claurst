@@ -1080,6 +1080,7 @@ pub async fn run_query_loop(
                             config.effort_level,
                             effective_thinking_budget,
                         ),
+                        activity: Default::default(),
                     };
 
                     // Use create_message_stream so the TUI receives real-time

@@ -2531,6 +2531,7 @@ impl SlashCommand for ReviewCommand {
             stop_sequences: vec![],
             thinking: None,
             provider_options: serde_json::Value::Object(Default::default()),
+            activity: Default::default(),
         };
 
         let review_text = match provider.create_message(request).await {
@@ -4294,6 +4295,7 @@ impl SlashCommand for RenameCommand {
             stop_sequences: vec![],
             thinking: None,
             provider_options: serde_json::Value::Object(Default::default()),
+            activity: Default::default(),
         };
 
         match provider.create_message(request).await {

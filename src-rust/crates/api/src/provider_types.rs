@@ -41,6 +41,41 @@ impl Default for StopReason {
 }
 
 // ---------------------------------------------------------------------------
+// RequestActivity
+// ---------------------------------------------------------------------------
+
+/// Categorises why a provider request is being made so that downstream
+/// infrastructure (proxies, billing, observability) can distinguish between
+/// different workload types within a single session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestActivity {
+    /// Primary agentic coding loop.
+    #[default]
+    Coding,
+    /// Plan-mode reasoning turns.
+    Planning,
+    /// Sub-agent delegation via AgentTool.
+    Subagent,
+    /// Conversation compaction / context-collapse summaries.
+    Summarize,
+    /// Automated session title generation.
+    Title,
+}
+
+impl RequestActivity {
+    pub fn as_header_value(&self) -> &'static str {
+        match self {
+            Self::Coding => "coding",
+            Self::Planning => "planning",
+            Self::Subagent => "subagent",
+            Self::Summarize => "summarize",
+            Self::Title => "title",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ProviderRequest
 // ---------------------------------------------------------------------------
 
@@ -91,6 +126,10 @@ pub struct ProviderRequest {
     /// Defaults to an empty JSON object `{}`.
     #[serde(default)]
     pub provider_options: Value,
+
+    /// The activity category for this request (billing / routing / observability).
+    #[serde(default)]
+    pub activity: RequestActivity,
 }
 
 // ---------------------------------------------------------------------------

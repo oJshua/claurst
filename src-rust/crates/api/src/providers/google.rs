@@ -1065,6 +1065,7 @@ mod tests {
             stop_sequences: vec![],
             thinking: None,
             provider_options: json!({}),
+            activity: Default::default(),
         }
     }
 
