@@ -427,6 +427,8 @@ pub mod client {
         pub use_bearer_auth: bool,
         /// Which provider to use for API calls.
         pub provider: Provider,
+        /// Extra HTTP headers applied to every request made by this client.
+        pub extra_headers: std::collections::HashMap<String, String>,
     }
 
     impl Default for ClientConfig {
@@ -442,6 +444,7 @@ pub mod client {
                 request_timeout: Duration::from_secs(600),
                 use_bearer_auth: false,
                 provider: Provider::Anthropic,
+                extra_headers: std::collections::HashMap::new(),
             }
         }
     }
@@ -551,7 +554,7 @@ pub mod client {
             request.stream = false;
             let body = serde_json::to_value(&request).map_err(ClaudeError::Json)?;
 
-            let resp = self.send_with_retry(&body).await?;
+            let resp = self.send_with_retry(&body, &Default::default()).await?;
             let status = resp.status();
             let text = resp.text().await.map_err(ClaudeError::Http)?;
 
@@ -656,7 +659,7 @@ pub mod client {
             request.stream = true;
             let body = serde_json::to_value(&request).map_err(ClaudeError::Json)?;
 
-            let resp = self.send_with_retry(&body).await?;
+            let resp = self.send_with_retry(&body, &Default::default()).await?;
             let status = resp.status();
 
             if !status.is_success() {
@@ -678,6 +681,54 @@ pub mod client {
                 }
             });
 
+            Ok(rx)
+        }
+
+        // ---- Per-request-header variants -----------------------------------
+
+        /// Like `create_message` but with additional per-request HTTP headers.
+        pub async fn create_message_with_headers(
+            &self,
+            mut request: CreateMessageRequest,
+            headers: &std::collections::HashMap<String, String>,
+        ) -> Result<CreateMessageResponse, ClaudeError> {
+            request.stream = false;
+            let body = serde_json::to_value(&request).map_err(ClaudeError::Json)?;
+            let resp = self.send_with_retry(&body, headers).await?;
+            let status = resp.status();
+            let text = resp.text().await.map_err(ClaudeError::Http)?;
+            if !status.is_success() {
+                return Err(self.parse_api_error(status.as_u16(), &text));
+            }
+            serde_json::from_str(&text).map_err(ClaudeError::Json)
+        }
+
+        /// Like `create_message_stream` but with additional per-request HTTP headers.
+        pub async fn create_message_stream_with_headers(
+            &self,
+            mut request: CreateMessageRequest,
+            handler: Arc<dyn StreamHandler>,
+            headers: &std::collections::HashMap<String, String>,
+        ) -> Result<mpsc::Receiver<streaming::AnthropicStreamEvent>, ClaudeError> {
+            request.stream = true;
+            let body = serde_json::to_value(&request).map_err(ClaudeError::Json)?;
+            let resp = self.send_with_retry(&body, headers).await?;
+            let status = resp.status();
+            if !status.is_success() {
+                let text = resp.text().await.map_err(ClaudeError::Http)?;
+                return Err(self.parse_api_error(status.as_u16(), &text));
+            }
+            let (tx, rx) = mpsc::channel(256);
+            tokio::spawn(async move {
+                if let Err(e) = Self::process_sse_stream(resp, handler, tx.clone()).await {
+                    let _ = tx
+                        .send(streaming::AnthropicStreamEvent::Error {
+                            error_type: "stream_error".into(),
+                            message: e.to_string(),
+                        })
+                        .await;
+                }
+            });
             Ok(rx)
         }
 
@@ -721,9 +772,13 @@ pub mod client {
         // ---- Internal helpers --------------------------------------------
 
         /// Build the common request and execute with retry logic.
+        ///
+        /// `per_request_headers` are applied on top of `config.extra_headers`;
+        /// if the same key appears in both, the per-request value wins.
         async fn send_with_retry(
             &self,
             body: &Value,
+            per_request_headers: &std::collections::HashMap<String, String>,
         ) -> Result<reqwest::Response, ClaudeError> {
             let url = format!("{}/v1/messages", self.config.api_base);
             let mut attempts = 0u32;
@@ -755,6 +810,12 @@ pub mod client {
                 } else {
                     req.header("x-api-key", &self.config.api_key)
                 };
+                for (k, v) in &self.config.extra_headers {
+                    req = req.header(k.as_str(), v.as_str());
+                }
+                for (k, v) in per_request_headers {
+                    req = req.header(k.as_str(), v.as_str());
+                }
                 let req = req.body(body_str.clone());
 
                 let resp = req.send().await.map_err(ClaudeError::Http)?;
