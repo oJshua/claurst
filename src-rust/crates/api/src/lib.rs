@@ -826,6 +826,20 @@ pub mod client {
                     return Ok(resp);
                 }
 
+                // 503 with x-claurst-degraded: proxy is serving via a fallback
+                // model. Treat as success so the stream is consumed normally.
+                if status == 503 {
+                    let is_degraded = resp
+                        .headers()
+                        .get("x-claurst-degraded")
+                        .and_then(|v| v.to_str().ok())
+                        == Some("1");
+                    if is_degraded {
+                        warn!("Yolomax proxy degraded — using fallback model");
+                        return Ok(resp);
+                    }
+                }
+
                 // 429 (rate limit) or 529 (overloaded): retry
                 if (status == 429 || status == 529) && attempts <= self.config.max_retries {
                     // Honour Retry-After header if present
@@ -859,6 +873,7 @@ pub mod client {
             if let Ok(err) = serde_json::from_str::<ApiErrorResponse>(body) {
                 match status {
                     401 => ClaudeError::Auth(err.error.message),
+                    402 => ClaudeError::QuotaExhausted(err.error.message),
                     429 => ClaudeError::RateLimit,
                     529 => ClaudeError::ApiStatus {
                         status,

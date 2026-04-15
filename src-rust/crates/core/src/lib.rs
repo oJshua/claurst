@@ -128,6 +128,9 @@ pub mod error {
         #[error("Rate limit exceeded")]
         RateLimit,
 
+        #[error("Quota exhausted: {0}")]
+        QuotaExhausted(String),
+
         #[error("Context window exceeded")]
         ContextWindowExceeded,
 

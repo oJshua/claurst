@@ -140,6 +140,14 @@ pub fn parse_error_response(status: u16, body: &str, provider: &ProviderId) -> P
             model: "unknown".to_string(),
             suggestions: vec![],
         },
+        402 => ProviderError::QuotaExceeded {
+            provider: provider.clone(),
+            message: if message.is_empty() {
+                "Out of quota — usage limit reached.".to_string()
+            } else {
+                message
+            },
+        },
         429 => ProviderError::RateLimited {
             provider: provider.clone(),
             retry_after: None,
