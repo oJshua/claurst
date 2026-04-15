@@ -625,6 +625,61 @@ When `models_whitelist` is non-empty for a provider, only the listed model IDs c
 
 The above example allows only `gpt-4o` (whitelist minus blacklist).
 
+## Yolomax
+
+A managed proxy that routes requests to Anthropic models on your behalf,
+handling authentication, rate limiting, and billing centrally.
+
+**Authentication:** OAuth device-code flow via `/connect yolomax`.
+
+**Setup:**
+
+1. Set the proxy URL:
+   ```sh
+   export YOLOMAX_BASE_URL=https://your-proxy.example.com
+   ```
+
+2. Run the connect command:
+   ```
+   /connect yolomax
+   ```
+
+3. A browser window opens. Enter the displayed code to authorize.
+
+4. On success, Claurst persists your tokens and sets `provider: yolomax`
+   in settings.
+
+**Environment variables:**
+
+| Variable | Required | Description |
+|---|---|---|
+| `YOLOMAX_BASE_URL` | Yes | Base URL of the Yolomax proxy |
+| `YOLOMAX_API_KEY` | No | Manual bearer token (skips device-code flow) |
+
+**Activity headers:**
+
+Every request through Yolomax carries an `x-claurst-activity` header
+categorising the workload:
+
+| Activity | When |
+|---|---|
+| `coding` | Primary agentic coding loop |
+| `planning` | Plan-mode reasoning turns |
+| `subagent` | Sub-agent delegation via Agent tool |
+| `summarize` | Conversation compaction / context collapse |
+| `title` | Automated session title generation |
+
+**Token refresh:** Access tokens are refreshed transparently on 401.
+If refresh fails, Claurst prompts you to re-run `/connect yolomax`.
+
+**Error handling:**
+
+- 402: "Out of quota" message displayed.
+- 503 with `x-claurst-degraded: 1`: Request served via fallback model.
+- 429: Automatic retry with exponential back-off.
+
+---
+
 ## Model Registry
 
 Claurst ships a bundled snapshot of models for Anthropic, OpenAI, and Google. At runtime it optionally refreshes from the public `https://models.dev/api.json` API (cached to `~/.claurst/models_cache.json`, refreshed at most every 5 minutes). Network failures are swallowed silently; the bundled snapshot is always sufficient for normal operation.

@@ -193,7 +193,12 @@ Connect to a remote AI provider or configure a custom provider endpoint. Support
 /connect
 /connect <provider-name>
 /connect openai https://api.openai.com/v1
+/connect yolomax
 ```
+
+For Yolomax, this initiates an OAuth device-code flow: a browser window
+opens for authorization, and on success the tokens are persisted and the
+provider is set to `yolomax`. Requires `YOLOMAX_BASE_URL` to be set.
 
 ---
 
